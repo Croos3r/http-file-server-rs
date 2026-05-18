@@ -31,4 +31,7 @@ pub struct Arguments {
     /// Root directory of the files to serve
     #[arg(value_parser = parse_directory_pathbuf, default_value = ".")]
     pub directory: PathBuf,
+
+    #[arg(short = 'p', long = "password")]
+    pub password: Option<String>,
 }

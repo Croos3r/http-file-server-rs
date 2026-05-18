@@ -10,7 +10,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     simple_logger::init_with_env().unwrap();
     let args = Arguments::parse();
 
-    let server = HttpServer::new(args.host, args.port, args.directory).await?;
+    let server = HttpServer::new(args.host, args.port, args.directory, args.password).await?;
 
     server.start().await?;
 
