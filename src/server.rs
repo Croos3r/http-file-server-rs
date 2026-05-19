@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::fs::FileType;
 use std::io::{self, ErrorKind};
 use std::ops::Deref;
 use std::path::{Component, Path};
