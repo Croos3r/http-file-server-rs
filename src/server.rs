@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fs::FileType;
 use std::io::{self, ErrorKind};
 use std::ops::Deref;
 use std::path::{Component, Path};
@@ -301,7 +302,14 @@ impl FileServer {
         let mut names = Vec::new();
 
         while let Some(entry) = entry_stream.next_entry().await? {
-            names.push(entry.file_name().to_string_lossy().into_owned());
+            names.push(
+                entry.file_name().to_string_lossy().into_owned()
+                    + if entry.file_type().await?.is_dir() {
+                        "/"
+                    } else {
+                        ""
+                    },
+            );
         }
 
         Ok(names)
