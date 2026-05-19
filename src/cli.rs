@@ -32,6 +32,7 @@ pub struct Arguments {
     #[arg(value_parser = parse_directory_pathbuf, default_value = ".")]
     pub directory: PathBuf,
 
+    /// Simple authentification password to be used to access to endpoints
     #[arg(short = 'p', long = "password")]
     pub password: Option<String>,
 }
