@@ -13,9 +13,11 @@ use hyper::body::{Bytes, Incoming};
 use hyper::{Method, Request, Response};
 use hyper::{StatusCode, header};
 use hyper_util::rt::TokioIo;
+use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
 use mime_guess::mime;
 use multer::{Field, Multipart};
+use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 
@@ -89,14 +91,10 @@ impl FileServer {
         })
     }
 
-    async fn get_file_content(&self, file_path: &Path) -> Result<Bytes, std::io::Error> {
+    async fn sanitize_file_path(&self, file_path: &Path) -> io::Result<PathBuf> {
         let mut path = self.directory.deref().clone();
         path.push(file_path);
         let path = tokio::fs::canonicalize(path).await?;
-        if let Some(cached_content) = self.cache.read().expect("lock poisoned").get(&path) {
-            debug!("Cache hit for {}", path.display());
-            return Ok(cached_content.clone());
-        }
 
         if !path.starts_with(self.directory.as_path()) {
             warn!(
@@ -107,13 +105,22 @@ impl FileServer {
             return Err(std::io::Error::from_raw_os_error(2));
         }
 
-        tokio::fs::read(&path).await.map(|content| {
-            debug!("Cache miss for {}, memoizing...", path.display());
+        Ok(path)
+    }
+
+    async fn get_file_content(&self, file_path: &Path) -> Result<Bytes, std::io::Error> {
+        if let Some(cached_content) = self.cache.read().expect("lock poisoned").get(file_path) {
+            debug!("Cache hit for {}", file_path.display());
+            return Ok(cached_content.clone());
+        }
+
+        tokio::fs::read(file_path).await.map(|content| {
+            debug!("Cache miss for {}, memoizing...", file_path.display());
             let content = Bytes::from(content);
             self.cache
                 .write()
                 .expect("lock poisoned")
-                .entry(path)
+                .entry(file_path.to_path_buf())
                 .or_insert(content.clone());
             content
         })
@@ -136,6 +143,49 @@ impl FileServer {
         )
     }
 
+    fn construct_html_directory_listing_response(
+        cur_path: &Path,
+        entries: &[String],
+    ) -> Response<Full<Bytes>> {
+        let entries = entries
+            .into_iter()
+            .map(|entry| {
+                format!(
+                    "<li><a href=\"{}/{entry}\">{entry}</a></li>",
+                    if cur_path != Path::new("") {
+                        "/".to_string() + &cur_path.to_string_lossy()
+                    } else {
+                        "".to_string()
+                    },
+                )
+            })
+            .join("\n");
+        let parent = cur_path
+            .parent()
+            .map(|parent| parent.to_string_lossy().to_string() + "/")
+            .map(|parent| format!("<li><a href=\"{parent}\">..</a></li>\n"))
+            .unwrap_or(String::new());
+        let html = format!(
+            "<!doctype html>
+        <html>
+          <head>
+            <title>HTTP File Server - {cur_path}/</title>
+          </head>
+          <body>
+            <h1>{cur_path}/</h1>
+            <ul>
+{parent}{entries}
+            </ul>
+          </body>
+        </html>",
+            cur_path = cur_path.display(),
+        );
+        Response::builder()
+            .header(header::CONTENT_TYPE, mime::TEXT_HTML.to_string())
+            .body(Full::new(Bytes::from(html)))
+            .unwrap()
+    }
+
     async fn handle_file_retrieve(&self, file_path: &Path) -> Response<Full<Bytes>> {
         let Ok(body) = self.get_file_content(file_path).await else {
             return Self::construct_not_found_response(&file_path.to_string_lossy());
@@ -153,15 +203,12 @@ impl FileServer {
             .unwrap()
     }
 
-    fn construct_simple_response(
-        error_message: String,
-        status: StatusCode,
-    ) -> Response<Full<Bytes>> {
+    fn construct_simple_response(message: String, status: StatusCode) -> Response<Full<Bytes>> {
         Response::builder()
             .status(status)
             .header(header::CONTENT_TYPE, mime::TEXT_PLAIN.to_string())
-            .header(header::CONTENT_LENGTH, error_message.len())
-            .body(Full::new(Bytes::from(error_message)))
+            .header(header::CONTENT_LENGTH, message.len())
+            .body(Full::new(Bytes::from(message)))
             .unwrap()
     }
 
@@ -170,7 +217,14 @@ impl FileServer {
     }
 
     async fn write_field_chunks(path: &Path, field: &mut Field<'_>) -> io::Result<()> {
-        let mut file = tokio::fs::File::create_new(&path).await?;
+        if let Some(parent) = path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(path)
+            .await?;
         while let Some(chunk) = field
             .chunk()
             .await
@@ -233,6 +287,36 @@ impl FileServer {
         Self::construct_simple_response("Created".to_string(), StatusCode::CREATED)
     }
 
+    async fn get_directory_listing(directory_path: &Path) -> io::Result<Vec<String>> {
+        let mut entry_stream = tokio::fs::read_dir(directory_path).await?;
+        let mut names = Vec::new();
+
+        while let Some(entry) = entry_stream.next_entry().await? {
+            names.push(entry.file_name().to_string_lossy().into_owned());
+        }
+
+        Ok(names)
+    }
+
+    async fn handle_directory_display(&self, directory_path: &Path) -> Response<Full<Bytes>> {
+        let Ok(entries) = Self::get_directory_listing(directory_path).await else {
+            return Self::construct_simple_response(
+                format!(
+                    "Could not get the directory listing of {}",
+                    directory_path.display()
+                ),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        };
+
+        Self::construct_html_directory_listing_response(
+            directory_path
+                .strip_prefix(self.directory.to_path_buf())
+                .unwrap(),
+            &entries,
+        )
+    }
+
     async fn handle_request(&self, req: Request<Incoming>) -> Response<Full<Bytes>> {
         let endpoint = req.uri().path();
         if !self.is_valid_password(
@@ -246,8 +330,21 @@ impl FileServer {
 
         match (req.method(), endpoint) {
             (&Method::GET, _) => {
-                self.handle_file_retrieve(&PathBuf::from(&endpoint[1..]))
-                    .await
+                let file_path = &PathBuf::from(&endpoint[1..]);
+                let Ok(path) = self.sanitize_file_path(file_path).await else {
+                    return Self::construct_not_found_response(endpoint);
+                };
+
+                if path.is_file() {
+                    self.handle_file_retrieve(&path).await
+                } else if path.is_dir() {
+                    self.handle_directory_display(&path).await
+                } else {
+                    Self::construct_simple_response(
+                        format!("Could not display the resource {endpoint}",),
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    )
+                }
             }
             (&Method::POST, "/upload") => self.handle_file_upload(req).await,
             (_, endpoint) => Self::construct_not_found_response(endpoint),
