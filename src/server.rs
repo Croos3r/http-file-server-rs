@@ -10,11 +10,11 @@ use anyhow::Context;
 use futures_util::TryStreamExt;
 use http_body_util::{BodyStream, Full};
 use hyper::body::{Bytes, Incoming};
+use hyper::{header, StatusCode};
 use hyper::{Method, Request, Response};
-use hyper::{StatusCode, header};
 use hyper_util::rt::TokioIo;
-use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
+use maud::{html, DOCTYPE};
 use mime_guess::mime;
 use multer::{Field, Multipart};
 use tokio::fs::OpenOptions;
@@ -147,42 +147,51 @@ impl FileServer {
         cur_path: &Path,
         entries: &[String],
     ) -> Response<Full<Bytes>> {
-        let entries = entries
-            .into_iter()
-            .map(|entry| {
-                format!(
-                    "<li><a href=\"{}/{entry}\">{entry}</a></li>",
-                    if cur_path != Path::new("") {
-                        "/".to_string() + &cur_path.to_string_lossy()
-                    } else {
-                        "".to_string()
-                    },
-                )
-            })
-            .join("\n");
-        let parent = cur_path
-            .parent()
-            .map(|parent| parent.to_string_lossy().to_string() + "/")
-            .map(|parent| format!("<li><a href=\"{parent}\">..</a></li>\n"))
-            .unwrap_or(String::new());
-        let html = format!(
-            "<!doctype html>
-        <html>
-          <head>
-            <title>HTTP File Server - {cur_path}/</title>
-          </head>
-          <body>
-            <h1>{cur_path}/</h1>
-            <ul>
-{parent}{entries}
-            </ul>
-          </body>
-        </html>",
-            cur_path = cur_path.display(),
-        );
+        let html = html! {
+            (DOCTYPE)
+            html {
+                head {
+                    title {
+                        "HTTP File Server - " ({
+                            cur_path.display()
+                        }) "/"
+                    }
+                }
+                body {
+                    h1 {
+                        (cur_path.display()) "/"
+                    }
+                    ul {
+                        @if let Some(parent) = cur_path.parent() {
+                            li {
+                                a href={
+                                    "/" (parent.display())
+                                } {
+                                    ".."
+                                }
+                            }
+                        }
+                        @for entry in entries {
+                            @let prefix = if cur_path != Path::new("") {
+                                "/".to_string() + &cur_path.to_string_lossy()
+                            } else {
+                                "".to_string()
+                            };
+                            li {
+                                a href={
+                                    (prefix) "/" (entry)
+                                } {
+                                    (entry)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
         Response::builder()
             .header(header::CONTENT_TYPE, mime::TEXT_HTML.to_string())
-            .body(Full::new(Bytes::from(html)))
+            .body(Full::new(Bytes::from(html.into_string())))
             .unwrap()
     }
 

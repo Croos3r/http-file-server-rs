@@ -12,6 +12,7 @@ hyper = { version = "1.9.0", features = ["full"] }
 hyper-util = { version = "0.1.20", features = ["full"] }
 itertools = "0.14.0"
 log = "0.4.29"
+maud = "0.27.0"
 mime_guess = "2.0.5"
 multer = "3.1.0"
 simple_logger = "5.2.0"
