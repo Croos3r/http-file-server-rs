@@ -19,3 +19,5 @@ Features :
 - [ ] Better caching algorithm than "let's cache everything and pray I don't run out of memory"
 - [ ] Implement proper simple auth with username:password as b64 and all the other related things (I didn't document myself)
 - [ ] Graceful shutdown
+
+Feel free to drop me a feedback on the codebase or about a cool feature I can implement in the [issues](https://github.com/Croos3r/http-file-server-rs/issues)
