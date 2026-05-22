@@ -14,11 +14,12 @@ Features :
 - [x] File caching
 - [ ] Directory listings caching
 - [x] Path traversal filtering
-- [ ] Opt-in file upload rather than enabled by default (could be dangerous)
+- [x] Opt-in file upload rather than enabled by default (could be dangerous)
 - [ ] Parameter to set a limit for file upload
 - [ ] Better caching algorithm than "let's cache everything and pray I don't run out of memory"
 - [ ] Implement proper simple auth with username:password as b64 and all the other related things (I didn't document myself)
 - [ ] Graceful shutdown
 - [ ] Change logging system to `tracing`
+- [x] Customizable upload endpoint
 
 Feel free to drop me a feedback on the codebase or about a cool feature I can implement in the [issues](https://github.com/Croos3r/http-file-server-rs/issues)

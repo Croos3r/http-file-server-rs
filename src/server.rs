@@ -36,6 +36,7 @@ impl HttpServer {
         port: u16,
         directory: PathBuf,
         password: Option<String>,
+        upload_path: Option<PathBuf>,
     ) -> anyhow::Result<Self> {
         let addr = SocketAddr::from((host, port));
 
@@ -46,7 +47,7 @@ impl HttpServer {
         info!("Bound on {addr}");
 
         Ok(Self {
-            file_server: FileServer::new(directory, password)?,
+            file_server: FileServer::new(directory, password, upload_path)?,
             listener,
         })
     }
@@ -78,14 +79,20 @@ impl HttpServer {
 #[derive(Debug, Clone)]
 struct FileServer {
     password: Option<String>,
+    upload_endpoint: Option<PathBuf>,
     directory: Arc<PathBuf>,
     cache: Arc<RwLock<HashMap<PathBuf, Bytes>>>,
 }
 
 impl FileServer {
-    pub fn new(directory: PathBuf, password: Option<String>) -> Result<Self, std::io::Error> {
+    pub fn new(
+        directory: PathBuf,
+        password: Option<String>,
+        upload_endpoint: Option<PathBuf>,
+    ) -> Result<Self, std::io::Error> {
         Ok(Self {
             password,
+            upload_endpoint,
             directory: Arc::new(directory.canonicalize()?),
             cache: Arc::new(RwLock::new(HashMap::default())),
         })
@@ -362,7 +369,15 @@ impl FileServer {
                     )
                 }
             }
-            (&Method::POST, "/upload") => self.handle_file_upload(req).await,
+            (&Method::POST, endpoint)
+                if self
+                    .upload_endpoint
+                    .as_ref()
+                    .map(|upload_enpoint| endpoint == upload_enpoint)
+                    .unwrap_or(false) =>
+            {
+                self.handle_file_upload(req).await
+            }
             (_, endpoint) => Self::construct_not_found_response(endpoint),
         }
     }

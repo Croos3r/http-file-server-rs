@@ -1,4 +1,8 @@
-use std::{net::Ipv4Addr, path::PathBuf, str::FromStr};
+use std::{
+    net::Ipv4Addr,
+    path::{Component, PathBuf},
+    str::FromStr,
+};
 
 use clap::Parser;
 
@@ -13,6 +17,20 @@ fn parse_directory_pathbuf(path: &str) -> Result<PathBuf, String> {
 
     if !path_buf.is_dir() {
         return Err(format!("{path} is not a directory"));
+    }
+
+    Ok(path_buf)
+}
+
+fn parse_absolute_path(path: &str) -> Result<PathBuf, String> {
+    let path_buf = PathBuf::from(path);
+
+    if !path_buf.is_absolute()
+        || path_buf
+            .components()
+            .any(|c| matches!(c, Component::Prefix(_) | Component::ParentDir))
+    {
+        return Err(format!("{path} is not a valid endpoint"));
     }
 
     Ok(path_buf)
@@ -35,4 +53,10 @@ pub struct Arguments {
     /// Simple authentification password to be used to access to endpoints
     #[arg(short = 'p', long = "password")]
     pub password: Option<String>,
+
+    #[arg(short, long)]
+    pub upload: bool,
+
+    #[arg(long = "upload-endpoint", value_parser = parse_absolute_path, default_value = "/upload")]
+    pub upload_endpoint: PathBuf,
 }
