@@ -36,6 +36,15 @@ fn parse_absolute_path(path: &str) -> Result<PathBuf, String> {
     Ok(path_buf)
 }
 
+fn parse_usize_bigger_than_zero(size: &str) -> Result<usize, String> {
+    let value = size.parse::<usize>().map_err(|err| err.to_string())?;
+
+    if value < 1 {
+        return Err(format!("{size} must be greater than zero"));
+    }
+    Ok(value)
+}
+
 #[derive(Debug, Parser)]
 pub struct Arguments {
     /// Host to serve the files on
@@ -54,9 +63,15 @@ pub struct Arguments {
     #[arg(short = 'p', long = "password")]
     pub password: Option<String>,
 
+    /// Enable the ability to upload files
     #[arg(short, long)]
     pub upload: bool,
 
-    #[arg(long = "upload-endpoint", value_parser = parse_absolute_path, default_value = "/upload")]
+    /// Actual endpoint to use for file upload
+    #[arg(long = "upload-endpoint", value_parser = parse_absolute_path, default_value = "/upload", requires = "upload")]
     pub upload_endpoint: PathBuf,
+
+    /// Maximum size of a file that can be uploaded (in bytes)
+    #[arg(long = "max-upload-size", value_parser = parse_usize_bigger_than_zero, default_value = "50000", requires = "upload")]
+    pub max_upload_size: usize,
 }

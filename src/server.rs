@@ -36,7 +36,8 @@ impl HttpServer {
         port: u16,
         directory: PathBuf,
         password: Option<String>,
-        upload_path: Option<PathBuf>,
+        upload_endpoint: Option<PathBuf>,
+        max_upload_size: usize,
     ) -> anyhow::Result<Self> {
         let addr = SocketAddr::from((host, port));
 
@@ -47,7 +48,7 @@ impl HttpServer {
         info!("Bound on {addr}");
 
         Ok(Self {
-            file_server: FileServer::new(directory, password, upload_path)?,
+            file_server: FileServer::new(directory, password, upload_endpoint, max_upload_size)?,
             listener,
         })
     }
@@ -80,6 +81,7 @@ impl HttpServer {
 struct FileServer {
     password: Option<String>,
     upload_endpoint: Option<PathBuf>,
+    max_upload_size: usize,
     directory: Arc<PathBuf>,
     cache: Arc<RwLock<HashMap<PathBuf, Bytes>>>,
 }
@@ -89,8 +91,10 @@ impl FileServer {
         directory: PathBuf,
         password: Option<String>,
         upload_endpoint: Option<PathBuf>,
+        max_upload_size: usize,
     ) -> Result<Self, std::io::Error> {
         Ok(Self {
+            max_upload_size,
             password,
             upload_endpoint,
             directory: Arc::new(directory.canonicalize()?),
@@ -251,7 +255,37 @@ impl FileServer {
         file.flush().await
     }
 
+    fn get_content_length_for_request(req: &Request<Incoming>) -> Option<usize> {
+        req.headers()
+            .get(header::CONTENT_LENGTH)?
+            .to_str()
+            .ok()?
+            .parse()
+            .ok()
+    }
+
     async fn handle_file_upload(&self, req: Request<Incoming>) -> Response<Full<Bytes>> {
+        let Some(content_length) = Self::get_content_length_for_request(&req) else {
+            debug!("Could not get the content length for file upload size");
+            return Self::construct_simple_response(
+                "Could not get the content length of this request".to_string(),
+                StatusCode::BAD_REQUEST,
+            );
+        };
+        dbg!(self.max_upload_size, content_length);
+        if self.max_upload_size < content_length {
+            warn!(
+                "Got a too big file upload request ({content_length} > {})",
+                self.max_upload_size
+            );
+            return Self::construct_simple_response(
+                format!(
+                    "The maximum size of an upload request accepted is {}B but your request was {content_length}B",
+                    self.max_upload_size
+                ),
+                StatusCode::BAD_REQUEST,
+            );
+        }
         let Some(Ok(boundary)) = req.headers().get(header::CONTENT_TYPE).map(|content_type| {
             multer::parse_boundary(String::from_utf8_lossy(content_type.as_bytes()))
         }) else {
