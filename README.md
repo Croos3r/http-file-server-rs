@@ -15,7 +15,7 @@ Features :
 - [ ] Directory listings caching
 - [x] Path traversal filtering
 - [x] Opt-in file upload rather than enabled by default (could be dangerous)
-- [ ] Parameter to set a limit for file upload
+- [x] Parameter to set a limit for file upload
 - [ ] Better caching algorithm than "let's cache everything and pray I don't run out of memory"
 - [ ] Implement proper simple auth with username:password as b64 and all the other related things (I didn't document myself)
 - [ ] Graceful shutdown
