@@ -54,26 +54,34 @@ impl HttpServer {
     }
 
     pub async fn start(self) -> anyhow::Result<()> {
+        let mut tasks = tokio::task::JoinSet::new();
         loop {
-            let (stream, addr) = self
-                .listener
-                .accept()
-                .await
-                .context("Could not accept a new connection")?;
-            trace!("Received connection from {addr}");
-
-            let io = TokioIo::new(stream);
-            let file_server = self.file_server.clone();
-
-            tokio::task::spawn(async move {
-                if let Err(err) = http1::Builder::new()
-                    .serve_connection(io, file_server)
-                    .await
-                {
-                    error!("Error serving connection {err}");
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {
+                    info!("Initiating shut down...");
+                    break;
                 }
+                accepted = self.listener.accept() => {
+                    let (stream, addr) = accepted.context("Could not accept a new connection")?;
+                    trace!("Received connection from {addr}");
+                    let io = TokioIo::new(stream);
+                    let file_server = self.file_server.clone();
+
+                    tasks.spawn(async move {
+                        if let Err(err) = http1::Builder::new()
+                            .serve_connection(io, file_server)
+                            .await
+                    {
+                        error!("Error serving connection {err}");
+                    }
             });
+                }
+            }
         }
+        info!("Draining {} in-flight connection(s)...", tasks.len());
+        while tasks.join_next().await.is_some() {}
+        info!("Shutting down complete. Goodbye !");
+        Ok(())
     }
 }
 
