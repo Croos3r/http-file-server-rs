@@ -18,7 +18,7 @@ Features :
 - [x] Parameter to set a limit for file upload
 - [ ] Better caching algorithm than "let's cache everything and pray I don't run out of memory"
 - [ ] Implement proper simple auth with username:password as b64 and all the other related things (I didn't document myself)
-- [ ] Graceful shutdown
+- [x] Graceful shutdown
 - [ ] Change logging system to `tracing`
 - [x] Customizable upload endpoint
 
