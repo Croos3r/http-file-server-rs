@@ -15,7 +15,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         args.port,
         args.directory,
         args.password,
-        args.upload.then(|| args.upload_endpoint),
+        args.upload.then_some(args.upload_endpoint),
         args.max_upload_size,
     )
     .await?;

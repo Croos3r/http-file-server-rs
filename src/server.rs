@@ -147,13 +147,6 @@ impl FileServer {
             .unwrap_or(false)
     }
 
-    fn construct_invalid_password_response(endpoint: &str) -> Response<Full<Bytes>> {
-        Self::construct_simple_response(
-            format!("You are not authorized to access {}", endpoint),
-            StatusCode::UNAUTHORIZED,
-        )
-    }
-
     fn construct_html_directory_listing_response(
         cur_path: &Path,
         entries: &[String],
@@ -219,7 +212,7 @@ impl FileServer {
                     .to_string(),
             )
             .header(header::CONTENT_LENGTH, body.len())
-            .body(Full::new(Bytes::from(body)))
+            .body(Full::new(body))
             .unwrap()
     }
 
@@ -243,6 +236,7 @@ impl FileServer {
         let mut file = OpenOptions::new()
             .write(true)
             .create(true)
+            .truncate(true)
             .open(path)
             .await?;
         while let Some(chunk) = field
@@ -382,7 +376,10 @@ impl FileServer {
                 .map(|password| password.as_bytes()),
         ) {
             trace!("Got an invalid password authentication attempt");
-            return Self::construct_invalid_password_response(endpoint);
+            return Self::construct_simple_response(
+                format!("You are not authorized to access {}", endpoint),
+                StatusCode::UNAUTHORIZED,
+            );
         }
 
         match (req.method(), endpoint) {
