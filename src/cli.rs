@@ -59,9 +59,13 @@ pub struct Arguments {
     #[arg(value_parser = parse_directory_pathbuf, default_value = ".")]
     pub directory: PathBuf,
 
-    /// Simple authentification password to be used to access to endpoints
-    #[arg(short = 'p', long = "password")]
-    pub password: Option<String>,
+    /// Simple authentification user:password combos to be used to access endpoints
+    #[arg(long = "basic-auth")]
+    pub basic_auth_combos: Vec<String>,
+
+    /// Bearer tokens that can be used to access endpoints
+    #[arg(long = "bearer-token")]
+    pub bearer_tokens: Vec<String>,
 
     /// Enable the ability to upload files
     #[arg(short, long)]

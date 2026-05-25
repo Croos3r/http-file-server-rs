@@ -24,6 +24,8 @@ use tokio::net::TcpListener;
 use hyper::server::conn::http1;
 use hyper::service::Service;
 
+use crate::authenticator::Authenticator;
+
 #[derive(Debug)]
 pub struct HttpServer {
     file_server: FileServer,
@@ -35,9 +37,9 @@ impl HttpServer {
         host: [u8; 4],
         port: u16,
         directory: PathBuf,
-        password: Option<String>,
         upload_endpoint: Option<PathBuf>,
         max_upload_size: usize,
+        authenticator: Authenticator,
     ) -> anyhow::Result<Self> {
         let addr = SocketAddr::from((host, port));
 
@@ -48,7 +50,12 @@ impl HttpServer {
         info!("Bound on {addr}");
 
         Ok(Self {
-            file_server: FileServer::new(directory, password, upload_endpoint, max_upload_size)?,
+            file_server: FileServer::new(
+                directory,
+                upload_endpoint,
+                max_upload_size,
+                authenticator,
+            )?,
             listener,
         })
     }
@@ -87,7 +94,7 @@ impl HttpServer {
 
 #[derive(Debug, Clone)]
 struct FileServer {
-    password: Option<String>,
+    authenticator: Authenticator,
     upload_endpoint: Option<PathBuf>,
     max_upload_size: usize,
     directory: Arc<PathBuf>,
@@ -97,13 +104,13 @@ struct FileServer {
 impl FileServer {
     pub fn new(
         directory: PathBuf,
-        password: Option<String>,
         upload_endpoint: Option<PathBuf>,
         max_upload_size: usize,
+        authenticator: Authenticator,
     ) -> Result<Self, std::io::Error> {
         Ok(Self {
+            authenticator,
             max_upload_size,
-            password,
             upload_endpoint,
             directory: Arc::new(directory.canonicalize()?),
             cache: Arc::new(RwLock::new(HashMap::default())),
@@ -143,16 +150,6 @@ impl FileServer {
                 .or_insert(content.clone());
             content
         })
-    }
-
-    fn is_valid_password(&self, password: Option<&[u8]>) -> bool {
-        let Some(ref server_password) = self.password else {
-            return true;
-        };
-
-        password
-            .map(|password| password == server_password.as_bytes())
-            .unwrap_or(false)
     }
 
     fn construct_html_directory_listing_response(
@@ -378,11 +375,7 @@ impl FileServer {
 
     async fn handle_request(&self, req: Request<Incoming>) -> Response<Full<Bytes>> {
         let endpoint = req.uri().path();
-        if !self.is_valid_password(
-            req.headers()
-                .get(header::AUTHORIZATION)
-                .map(|password| password.as_bytes()),
-        ) {
+        if !self.authenticator.authenticate_request(&req) {
             trace!("Got an invalid password authentication attempt");
             return Self::construct_simple_response(
                 format!("You are not authorized to access {}", endpoint),
