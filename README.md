@@ -21,5 +21,6 @@ Features :
 - [x] Graceful shutdown
 - [ ] Change logging system to `tracing`
 - [x] Customizable upload endpoint
+- [ ] Use `subtle` for constant-time equality check
 
 Feel free to drop me a feedback on the codebase or about a cool feature I can implement in the [issues](https://github.com/Croos3r/http-file-server-rs/issues)
